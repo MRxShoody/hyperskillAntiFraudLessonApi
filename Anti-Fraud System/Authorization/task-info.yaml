@@ -1,0 +1,2109 @@
+type: edu
+files:
+- name: src/resources/application.properties
+  visible: true
+  text: |-
+    server.port=28852
+    server.error.include-message=always
+    management.endpoints.web.exposure.include=*
+    management.endpoint.shutdown.enabled=true
+    spring.jackson.serialization.INDENT_OUTPUT=true
+  learner_created: false
+- name: build.gradle
+  visible: true
+  text: |
+    buildscript {
+        apply plugin: 'hyperskill'
+
+        repositories {
+            mavenCentral()
+        }
+
+        dependencies {
+            classpath "org.springframework.boot:spring-boot-gradle-plugin:$hs.spring.bootVersion"
+            classpath "io.spring.gradle:dependency-management-plugin:$hs.spring.dependencyManagementVersion"
+        }
+    }
+
+    apply plugin: 'java'
+    apply plugin: 'org.springframework.boot'
+    apply plugin: 'io.spring.dependency-management'
+
+    repositories {
+        mavenCentral()
+    }
+
+    sourceSets.main.resources.srcDirs = ["src/resources"]
+
+    dependencies {
+        implementation 'org.springframework.boot:spring-boot-starter'
+        implementation 'org.springframework.boot:spring-boot-starter-actuator'
+        implementation 'org.springframework.boot:spring-boot-starter-web'
+    }
+
+    test {
+        jvmArgs '--add-opens', 'java.base/java.lang=ALL-UNNAMED'
+    }
+  learner_created: false
+- name: test/AntiFraudTest.java
+  visible: false
+  text: |
+    import antifraud.AntiFraudApplication;
+    import com.google.gson.JsonArray;
+    import com.google.gson.JsonObject;
+    import org.hyperskill.hstest.dynamic.DynamicTest;
+    import org.hyperskill.hstest.dynamic.input.DynamicTesting;
+    import org.hyperskill.hstest.exception.outcomes.UnexpectedError;
+    import org.hyperskill.hstest.exception.outcomes.WrongAnswer;
+    import org.hyperskill.hstest.mocks.web.request.HttpRequest;
+    import org.hyperskill.hstest.mocks.web.response.HttpResponse;
+    import org.hyperskill.hstest.stage.SpringTest;
+    import org.hyperskill.hstest.testcase.CheckResult;
+
+    import java.util.ArrayList;
+    import java.util.List;
+
+    import static org.hyperskill.hstest.common.JsonUtils.getJson;
+    import static org.hyperskill.hstest.testing.expect.Expectation.expect;
+    import static org.hyperskill.hstest.testing.expect.json.JsonChecker.*;
+
+    class TestHint {
+        private final String apiPath;
+        private final String requestBody;
+        private final String message;
+
+        public TestHint(String apiPath, String requestBody, String message) {
+            this.apiPath = apiPath;
+            this.requestBody = requestBody;
+            this.message = message;
+        }
+
+        @Override
+        public String toString() {
+            return "Test case\n" +
+                    "Testing api: '" + apiPath + '\'' + "\n" +
+                    (requestBody.length() > 0 ? "request: '" + requestBody + '\'' + "\n" : "") +
+                    "Expectations: '" + message + "'" + "\n" +
+                    "-----";
+        }
+    }
+
+    public class AntiFraudTest extends SpringTest {
+
+        private final String transactionApi = "/api/antifraud/transaction";
+        private final String userApi = "/api/auth/user";
+        private final String userListApi = "/api/auth/list";
+        private final String lockApi = "/api/auth/access";
+        private final String roleApi = "/api/auth/role";
+        List<Integer> userIdList = new ArrayList<>();
+
+        private final String administrator = "{\n" +
+                "   \"name\": \"administrator\",\n" +
+                "   \"username\": \"administrator\",\n" +
+                "   \"password\": \"oMoa4VvqnLxW\"\n" +
+                "}";
+
+        private final String johndoe1 = "{\n" +
+                "   \"name\": \"John Doe 1\",\n" +
+                "   \"username\": \"johndoe1\",\n" +
+                "   \"password\": \"oMoa3VvqnLxW\"\n" +
+                "}";
+
+        private final String johndoe2 = "{\n" +
+                "   \"name\": \"John Doe 2\",\n" +
+                "   \"username\": \"johndoe2\",\n" +
+                "   \"password\": \"oMoa5VvqnLxW\"\n" +
+                "}";
+
+        private final String johndoe3 = "{\n" +
+                "   \"name\": \"John Doe 3\",\n" +
+                "   \"username\": \"johndoe3\",\n" +
+                "   \"password\": \"oMoa6VvqnLxW\"\n" +
+                "}";
+
+        private final String wronguser1 = "{\n" +
+                "   \"name\": \"John Doe 1\",\n" +
+                "   \"password\": \"oa3VvqnLxW\"\n" +
+                "}";
+
+        private final String wronguser2 = "{\n" +
+                "   \"name\": \"John Doe 2\",\n" +
+                "   \"username\": \"johndoe1\"\n" +
+                "}";
+
+        private final String wronguserCred1 = "{\n" +
+                "   \"name\": \"John Doe 1\",\n" +
+                "   \"username\": \"johndoe1\",\n" +
+                "   \"password\": \"oa3VvqnLxW\"\n" +
+                "}";
+
+        private final String wronguserCred2 = "{\n" +
+                "   \"name\": \"John Do\",\n" +
+                "   \"username\": \"johndo\",\n" +
+                "   \"password\": \"oMoa3VvqnLxW\"\n" +
+                "}";
+
+        private final String listAnswer1 = "[ {\n" +
+                "  \"id\" : 1,\n" +
+                "  \"name\" : \"administrator\",\n" +
+                "  \"username\" : \"administrator\",\n" +
+                "  \"role\" : \"ADMINISTRATOR\"\n" +
+                "}, {\n" +
+                "  \"id\" : 2,\n" +
+                "  \"name\" : \"John Doe 1\",\n" +
+                "  \"username\" : \"johndoe1\",\n" +
+                "  \"role\" : \"MERCHANT\"\n" +
+                "}, {\n" +
+                "  \"id\" : 4,\n" +
+                "  \"name\" : \"John Doe 2\",\n" +
+                "  \"username\" : \"johndoe2\",\n" +
+                "  \"role\" : \"MERCHANT\"\n" +
+                "} ]";
+
+        private final String listAnswer2 = "[ {\n" +
+                "  \"id\" : 1,\n" +
+                "  \"name\" : \"administrator\",\n" +
+                "  \"username\" : \"administrator\",\n" +
+                "  \"role\" : \"ADMINISTRATOR\"\n" +
+                "}, {\n" +
+                "  \"id\" : 4,\n" +
+                "  \"name\" : \"John Doe 2\",\n" +
+                "  \"username\" : \"johndoe2\",\n" +
+                "  \"role\" : \"MERCHANT\"\n" +
+                "} ]";
+
+        private final String listAnswer3 = "[ {\n" +
+                "  \"id\" : 1,\n" +
+                "  \"name\" : \"administrator\",\n" +
+                "  \"username\" : \"administrator\",\n" +
+                "  \"role\" : \"ADMINISTRATOR\"\n" +
+                "}, {\n" +
+                "  \"id\" : 4,\n" +
+                "  \"name\" : \"John Doe 2\",\n" +
+                "  \"username\" : \"johndoe2\",\n" +
+                "  \"role\" : \"SUPPORT\"\n" +
+                "} ]";
+
+        public AntiFraudTest() {
+            super(AntiFraudApplication.class, "../service_db.mv.db");
+        }
+
+        /**
+         * Method for restarting application
+         *
+         */
+        private CheckResult restartApplication() {
+            try {
+                reloadSpring();
+            } catch (Exception ex) {
+                throw new UnexpectedError(ex.getMessage());
+            }
+            return CheckResult.correct();
+        }
+
+        private HttpResponse checkResponseStatus(String user, String body,
+                                                 int status, String api, String method) {
+            HttpRequest request = null;
+            switch (method) {
+                case "GET":
+                    request = get(api);
+                    break;
+                case "POST":
+                    request = post(api, body);
+                    break;
+                case "PUT":
+                    request = put(api, body);
+                    break;
+                case "DELETE":
+                    request = delete(api);
+                    break;
+            }
+
+            if (user != null) {
+                JsonObject userJson = getJson(user).getAsJsonObject();
+                String password = userJson.get("password").getAsString();
+                String login = userJson.get("username").getAsString().toLowerCase();
+                request = request.basicAuth(login, password);
+            }
+            HttpResponse response = request.send();
+
+            if (response.getStatusCode() != status) {
+                throw new WrongAnswer(method + " " + api  + " should respond with "
+                        + "status code " + status + ", responded: " + response.getStatusCode() + "\n"
+                        + "Response body:\n" + response.getContent() + "\n");
+            }
+            return response;
+        }
+
+        public boolean isNumeric(String strNum) {
+            if (strNum == null) {
+                return false;
+            }
+            try {
+                long l = Long.parseLong(strNum);
+            } catch (NumberFormatException nfe) {
+                return false;
+            }
+            return true;
+        }
+
+        CheckResult testAddUser(String body, int status, String role, TestHint hint) {
+
+            System.out.println(hint.toString());
+
+            HttpResponse response = checkResponseStatus(null, body, status, userApi, "POST");
+
+            if (response.getStatusCode() == 201) {
+
+                JsonObject rightResponse = getJson(body).getAsJsonObject();
+                rightResponse.remove("password");
+
+                // Check is it JSON in response or something else
+                if (!response.getJson().isJsonObject()) {
+                    return CheckResult.wrong("Wrong object in response, expected JSON but was \n" +
+                            response.getContent().getClass());
+
+                }
+
+                JsonObject jsonResponse = response.getJson().getAsJsonObject();
+
+                // Check if password is presence in response
+                if (jsonResponse.get("password") != null) {
+                    return CheckResult.wrong("You must remove password from response\n" +
+                            jsonResponse);
+                }
+
+                if (jsonResponse.get("id") == null) {
+                    return CheckResult.wrong("Response must contain user ID\n" +
+                            "Received response:\n" +
+                            jsonResponse);
+                }
+
+                if (jsonResponse.get("id").isJsonNull()) {
+                    return CheckResult.wrong("Response must contain user ID\n" +
+                            "Received response:\n" +
+                            jsonResponse);
+                }
+
+                if (userIdList.contains(jsonResponse.get("id").getAsInt())) {
+                    return CheckResult.wrong("User ID must be unique!\n" +
+                            "Received response:\n" +
+                            jsonResponse);
+                }
+
+                rightResponse.addProperty("id", jsonResponse.get("id").toString());
+                // Check JSON in response
+                expect(response.getContent()).asJson().check(
+                        isObject()
+                                .value("id", isInteger())
+                                .value("name", rightResponse.get("name").getAsString())
+                                .value("role", role)
+                                .value("username", isString(s -> s.equalsIgnoreCase(rightResponse.get("username").getAsString())))
+                );
+                userIdList.add(jsonResponse.get("id").getAsInt());
+            }
+            return CheckResult.correct();
+        }
+
+        CheckResult testDeleteUser(String body, int status, String user, TestHint hint) {
+
+            System.out.println(hint.toString());
+
+            HttpResponse response = checkResponseStatus(body, "", status, userApi + "/" + user, "DELETE");
+
+            if (response.getStatusCode() == 200) {
+
+                // Check is it JSON in response or something else
+                if (!response.getJson().isJsonObject()) {
+                    return CheckResult.wrong("Wrong object in response, expected JSON but was \n" +
+                            response.getContent().getClass());
+
+                }
+
+                JsonObject jsonResponse = response.getJson().getAsJsonObject();
+
+                // Check JSON in response
+                expect(response.getContent()).asJson().check(
+                        isObject()
+                                .value("status", "Deleted successfully!")
+                                .value("username", isString(s -> s.equalsIgnoreCase(user)))
+                );
+            }
+            return CheckResult.correct();
+        }
+
+        private CheckResult testListUser(String user, int status, String answer,
+                                         int position, TestHint hint) {
+
+            System.out.println(hint.toString());
+
+            HttpResponse response = checkResponseStatus(user, "", status, userListApi, "GET");
+
+            if (response.getStatusCode() == 200) {
+                // Check is it array of JSON in response or something else
+                if (!response.getJson().isJsonArray()) {
+                    return CheckResult.wrong("Wrong object in response, expected array of JSON but was \n" +
+                            response.getContent().getClass());
+
+                }
+
+                JsonArray correctJson = getJson(answer).getAsJsonArray();
+                JsonArray responseJson = getJson(response.getContent()).getAsJsonArray();
+                if (responseJson.size() == 0) {
+                    throw new WrongAnswer("Empty array in response!");
+                }
+
+                if (responseJson.size() != position + 1) {
+                    throw new WrongAnswer("Incorrect number - " +  responseJson.size() +
+                            " users in response, must be - " + (position + 1));
+                }
+
+                // Check JSON in response
+                expect(responseJson.get(position).toString()).asJson().check(
+                        isObject()
+                                .value("id", isInteger())
+                                .value("name", correctJson.get(position).getAsJsonObject().get("name").getAsString())
+                                .value("role", correctJson.get(position).getAsJsonObject().get("role").getAsString())
+                                .value("username",
+                                        isString(s -> s.equalsIgnoreCase(correctJson.get(position).getAsJsonObject()
+                                                .get("username").getAsString()))
+                                ));
+
+            }
+            return CheckResult.correct();
+        }
+
+        private CheckResult testLock(String api, String user, int status, String operation, String username, TestHint hint) {
+            System.out.println(hint.toString());
+
+            JsonObject jsonBody = new JsonObject();
+            jsonBody.addProperty("username", username);
+            jsonBody.addProperty("operation", operation);
+
+            HttpResponse response = checkResponseStatus(user, jsonBody.toString(), status, api, "PUT");
+            if (response.getStatusCode() == 200) {
+                expect(response.getContent()).asJson().check(
+                        isObject()
+                                .value("status", isString(s ->
+                                        s.equalsIgnoreCase("User " + username + " " + operation + "ed!"))));
+            }
+            return CheckResult.correct();
+        }
+
+        private CheckResult testRole(String api, String user, int status, String role, String username, TestHint hint) {
+            System.out.println(hint.toString());
+
+            JsonObject jsonBody = new JsonObject();
+            jsonBody.addProperty("username", username);
+            jsonBody.addProperty("role", role);
+
+            HttpResponse response = checkResponseStatus(user, jsonBody.toString(), status, api, "PUT");
+
+            if (response.getStatusCode() == 200) {
+                expect(response.getContent()).asJson().check(
+                        isObject()
+                                .value("id", isInteger())
+                                .value("name", isString())
+                                .value("role", role)
+                                .value("username", isString(s -> s.equalsIgnoreCase(username))));
+            }
+            return CheckResult.correct();
+        }
+
+        private CheckResult testTransaction(String user, String api, String method,
+                                            int status, String amount, String answer, TestHint hint) {
+
+            System.out.println(hint.toString());
+
+            JsonObject jsonBody = new JsonObject();
+            if (isNumeric(amount)) {
+                jsonBody.addProperty("amount", Long.parseLong(amount));
+            } else if (amount == null) {
+                jsonBody.addProperty("amount", (Boolean) null);
+            } else if (!amount.equals("empty")) {
+                jsonBody.addProperty("amount", amount);
+            }
+
+            HttpResponse response = checkResponseStatus(user, jsonBody.toString(), status, api, method);
+
+            // Check JSON in response
+            if (response.getStatusCode() == 200) {
+                expect(response.getContent()).asJson().check(
+                        isObject()
+                                .value("result", answer));
+            }
+            return CheckResult.correct();
+        }
+
+        @DynamicTest
+        DynamicTesting[] dt = new DynamicTesting[]{
+                // Test POST request for signup api
+                () -> testAddUser(wronguser1, 400, "MERCHANT",
+                        new TestHint(userApi, wronguser1, "In case of wrong data in request, endpoint" +
+                                " must respond with BAD REQUEST  status (400).")), // 1
+
+                () -> testAddUser(wronguser2, 400, "MERCHANT",
+                        new TestHint(userApi, wronguser2, "In case of wrong data in request, endpoint" +
+                                " must respond with BAD REQUEST  status (400).")), // 2
+
+                () -> testAddUser(administrator, 201, "ADMINISTRATOR",
+                        new TestHint(userApi, johndoe1, "If user successfully added, endpoint" +
+                                " must respond with HTTP CREATED status (201) ")), // 3
+
+                () -> testListUser(administrator, 200,  listAnswer1, 0,
+                        new TestHint(userListApi, "", "Endpoint must respond with HTTP OK status (200)" +
+                                " and body with array of objects representing the users sorted by ID in ascending order.")), // 4
+
+
+                () -> testAddUser(johndoe1, 201, "MERCHANT",
+                        new TestHint(userApi, johndoe1, "If user successfully added, endpoint" +
+                                " must respond with HTTP CREATED status (201) ")), // 5
+
+                () -> testListUser(administrator, 200,  listAnswer1, 1,
+                        new TestHint(userListApi, "", "Endpoint must respond with HTTP OK status (200)" +
+                                " and body with array of objects representing the users sorted by ID in ascending order.")), // 6
+
+                () -> testListUser(wronguserCred1, 401,  listAnswer1, 0,
+                        new TestHint(userListApi, "", "A user with incorrect credentials is not allowed")), // 7
+
+                () -> testListUser(wronguserCred2, 401,  listAnswer1, 0,
+                        new TestHint(userListApi, "", "A user with incorrect credentials is not allowed")), // 8
+
+                () -> testTransaction(johndoe1, transactionApi, "POST", 401,"1", "ALLOWED",
+                        new TestHint(transactionApi, "", "Merchant after registration" +
+                                " must be LOCKED")), // 9
+
+                () -> testLock(lockApi, administrator, 200, "UNLOCK", "johndoe1",
+                        new TestHint(lockApi, "", "A user johndoe1 must be UNLOCKED")), // 10
+                () -> testTransaction(johndoe1, transactionApi, "POST", 200,"1", "ALLOWED",
+                        new TestHint(transactionApi, "", "A user johndoe1 must be UNLOCKED")), // 11
+
+                () -> testTransaction(johndoe1, transactionApi, "POST", 200,"1", "ALLOWED",
+                        new TestHint(transactionApi, "amount = 1", "Result validating of Transaction" +
+                                " must be 'ALLOWED'")), // 12
+
+                // Testing persistence
+                () -> restartApplication(), // 13
+
+                () -> testListUser(administrator, 200,  listAnswer1, 1,
+                        new TestHint(userListApi, "", "After restart user must exist")), // 14
+
+                () -> testAddUser(johndoe1, 409, "MERCHANT",
+                        new TestHint(userApi, johndoe1, "In case of an attempt to register an existing user," +
+                                " endpoint must respond with HTTP CONFLICT status (409).")), // 15
+
+                () -> testAddUser(johndoe2, 201, "MERCHANT",
+                        new TestHint(userApi, johndoe2, "If user successfully added, endpoint" +
+                                " must respond with HTTP CREATED status (201) ")), // 16
+
+                () -> testListUser(administrator, 200,  listAnswer1, 2,
+                        new TestHint(userListApi, "", "Endpoint must respond with HTTP OK status (200)" +
+                                " and body with array of objects representing the users sorted by ID in ascending order.")), // 17
+
+                () -> testTransaction(johndoe1, transactionApi, "POST", 200,"199", "ALLOWED",
+                        new TestHint(transactionApi, "amount = 199", "Result validating of Transaction" +
+                                " must be 'ALLOWED'")), // 18
+
+                () -> testTransaction(johndoe1, transactionApi, "POST", 200,"200", "ALLOWED",
+                        new TestHint(transactionApi, "amount = 200", "Result validating of Transaction" +
+                                " must be 'ALLOWED'")), // 19
+
+                () -> testTransaction(johndoe1, transactionApi, "POST", 200,"201", "MANUAL_PROCESSING",
+                        new TestHint(transactionApi, "amount = 201", "Result validating of Transaction" +
+                                " must be 'MANUAL_PROCESSING'")), // 20
+
+                () -> testTransaction(johndoe1, transactionApi, "POST", 200,"1499", "MANUAL_PROCESSING",
+                        new TestHint(transactionApi, "amount = 1499", "Result validating of Transaction" +
+                                " must be 'MANUAL_PROCESSING'")), // 21
+
+                () -> testTransaction(johndoe1, transactionApi, "POST", 200,"1500", "MANUAL_PROCESSING",
+                        new TestHint(transactionApi, "amount = 1500", "Result validating of Transaction" +
+                                " must be 'MANUAL_PROCESSING'")), // 22
+
+                () -> testTransaction(johndoe1, transactionApi, "POST", 200,"1501", "PROHIBITED",
+                        new TestHint(transactionApi, "amount = 1501", "Result validating of Transaction" +
+                                " must be 'PROHIBITED'")), // 23
+
+                () -> testTransaction(johndoe1, transactionApi, "POST", 200,"2000", "PROHIBITED",
+                        new TestHint(transactionApi, "amount = 2000", "Result validating of Transaction" +
+                                " must be 'PROHIBITED'")), // 24
+
+                () -> testTransaction(johndoe1, transactionApi, "POST", 400,"-1", "Wrong request!",
+                        new TestHint(transactionApi, "amount = -1", "Response status" +
+                                " must be 'Bad request'")), // 25
+
+                () -> testTransaction(johndoe1, transactionApi, "POST", 400,"0", "Wrong request!",
+                        new TestHint(transactionApi, "amount = 0", "Response status" +
+                                " must be 'Bad request'")), // 26
+
+                () -> testTransaction(johndoe1, transactionApi, "POST", 400,null, "Wrong request!",
+                        new TestHint(transactionApi, "amount = null", "Response status" +
+                                " must be 'Bad request'")), // 27
+
+                () -> testTransaction(johndoe1, transactionApi, "POST", 400,"", "Wrong request!",
+                        new TestHint(transactionApi, "amount = \"\"", "Response status" +
+                                " must be 'Bad request'")), // 28
+
+                () -> testTransaction(johndoe1, transactionApi, "POST", 400," ", "Wrong request!",
+                        new TestHint(transactionApi, "amount = \" \"", "Response status" +
+                                " must be 'Bad request'")), // 29
+
+                () -> testTransaction(johndoe1, transactionApi, "POST", 400,"empty", "Wrong request!",
+                        new TestHint(transactionApi, "empty body", "Response status" +
+                                " must be 'Bad request'")), // 30
+
+                () -> testDeleteUser(administrator,404,"somebody",
+                        new TestHint(userApi, userApi + "/" + "somebody", "If a user is not found," +
+                                " respond with HTTP Not Found status (404).")), // 31
+
+                () -> testDeleteUser(administrator,200,"johndoe1",
+                        new TestHint(userApi, userApi + "/" + "johndoe1", "The endpoint must delete" +
+                                " the user and respond with HTTP OK status (200)")), // 32
+
+                () -> testListUser(administrator, 200,  listAnswer2, 1,
+                        new TestHint(userListApi, "", "User 'johndoe1' must be delete")), // 33
+
+                () -> testRole(roleApi, administrator,404,"MERCHANT", "johndoe22",
+                        new TestHint(roleApi, "", "If a user is not found, endpoint" +
+                                " must respond with the HTTP Not Found status (404).")), // 34
+
+                () -> testRole(roleApi, administrator,400,"USER", "johndoe2",
+                        new TestHint(roleApi, "", "If a role is not found, endpoint" +
+                                " must respond with the HTTP Bad Request status (400).")), // 35
+
+                () -> testRole(roleApi, administrator,400,"ADMINISTRATOR", "johndoe2",
+                        new TestHint(roleApi, "", "If a role is ADMINISTRATOR, endpoint" +
+                                " must respond with the HTTP Bad Request status (400).")), // 36
+
+                () -> testRole(roleApi, administrator,200,"SUPPORT", "johndoe2",
+                        new TestHint(roleApi, "", "If a role successfully changed," +
+                                " respond with the HTTP OK status (200)")), // 37
+
+                () -> testRole(roleApi, administrator,409,"SUPPORT", "johndoe2",
+                        new TestHint(roleApi, "", "If a role already assigned to a user," +
+                                " endpoint must respond with the HTTP Conflict status (409).")), // 38
+
+                () -> testLock(lockApi, administrator, 200, "UNLOCK", "johndoe2",
+                        new TestHint(lockApi, "", "A user johndoe2 must be UNLOCKED")), // 39
+
+                () -> testListUser(johndoe2, 200,  listAnswer3, 1,
+                        new TestHint(userListApi, "", "Role for user 'johndoe2" +
+                                "' must be changed to SUPPORT")), // 40
+
+                () -> testTransaction(johndoe2, transactionApi, "POST", 403,"1", "ALLOWED",
+                        new TestHint(transactionApi, "", "Role MERCHANT must be removed from" +
+                                " user johndoe2!")), // 41
+
+                // test Locking
+                () -> testAddUser(johndoe3, 201, "MERCHANT",
+                        new TestHint(userApi, johndoe3, "If user successfully added, endpoint" +
+                                " must respond with HTTP CREATED status (201) ")), // 42
+
+                () -> testTransaction(johndoe3, transactionApi, "POST", 401,"1", "ALLOWED",
+                        new TestHint(transactionApi, "", "MERCHANT user after registration" +
+                                " must be LOCKED")), // 43
+
+                () -> testLock(lockApi, administrator, 200, "UNLOCK", "johndoe3",
+                        new TestHint(lockApi, "", "A user johndoe3 must be UNLOCKED")), // 44
+
+                () -> testTransaction(johndoe3, transactionApi, "POST", 200,"1", "ALLOWED",
+                        new TestHint(transactionApi, "", "A user johndoe3 must be UNLOCKED")), // 45
+
+                () -> testLock(lockApi, administrator, 200, "LOCK", "johndoe3",
+                        new TestHint(lockApi, "", "A user johndoe3 must be LOCKED")), // 46
+
+                () -> testTransaction(johndoe3, transactionApi, "POST", 401,"1", "ALLOWED",
+                        new TestHint(transactionApi, "", "A user johndoe3 must be LOCKED")), // 47
+
+                () -> testLock(lockApi, administrator, 200, "UNLOCK", "johndoe3",
+                        new TestHint(lockApi, "", "A user johndoe3 must be UNLOCKED")), // 48
+
+                // test role model
+                () -> testTransaction(administrator, transactionApi, "POST", 403,"1", "ALLOWED",
+                        new TestHint(transactionApi, "", "A user with role ADMINISTRATOR" +
+                                " must not have access to " + transactionApi)), // 49
+
+                () -> testTransaction(administrator, transactionApi + "/", "POST", 403,"1", "ALLOWED",
+                        new TestHint(transactionApi + "/", "", "A user with role ADMINISTRATOR" +
+                                " must not have access to " + transactionApi + "/")), // 50
+
+                () -> testTransaction(johndoe2, transactionApi, "POST", 403,"1", "ALLOWED",
+                        new TestHint(transactionApi, "", "A user with role SUPPORT" +
+                                " must not have access to " + transactionApi)), // 51
+
+                () -> testTransaction(johndoe2, transactionApi + "/", "POST", 403,"1", "ALLOWED",
+                        new TestHint(transactionApi + "/", "", "A user with role SUPPORT" +
+                                " must not have access to " + transactionApi + "/")), // 52
+
+                () -> testTransaction(null, transactionApi, "POST", 401,"1", "ALLOWED",
+                        new TestHint(transactionApi, "", "A user with role ANONYMOUS" +
+                                " must not have access to " + transactionApi)), // 53
+
+                () -> testDeleteUser(null,401,"johndoe1",
+                        new TestHint(userApi, "", "A user with role ANONYMOUS" +
+                                " must not have access to DELETE " + userApi)), // 54
+
+                () -> testDeleteUser(johndoe2,403,"johndoe1",
+                        new TestHint(userApi, "", "A user with role SUPPORT" +
+                                " must not have access to DELETE " + userApi)), // 55
+
+                () -> testDeleteUser(johndoe3,403,"johndoe1",
+                        new TestHint(userApi, "", "A user with role MERCHANT" +
+                                " must not have access to DELETE " + userApi)), // 56
+
+                () -> testDeleteUser(johndoe3,403,"",
+                        new TestHint(userApi, "", "A user with role MERCHANT" +
+                                " must not have access to DELETE " + userApi)), // 57
+
+                () -> testListUser(null, 401,  listAnswer3, 1,
+                        new TestHint(userListApi, "", "A user with role ANONYMOUS" +
+                                " must not have access to " + userListApi)), // 58
+
+                () -> testListUser(johndoe3, 403,  listAnswer3, 1,
+                        new TestHint(userListApi, "", "A user with role MERCHANT" +
+                                " must not have access to " + userListApi)), // 59
+
+                () -> testLock(lockApi, johndoe3, 403, "UNLOCK", "johndoe2",
+                        new TestHint(lockApi, "", "A user with role MERCHANT" +
+                                " must not have access to "  + lockApi)), // 60
+
+                () -> testLock(lockApi, johndoe2, 403, "UNLOCK", "johndoe2",
+                        new TestHint(lockApi, "", "A user with role SUPPORT" +
+                                " must not have access to "  + lockApi)), // 61
+
+                () -> testLock(lockApi + "/", johndoe3, 403, "UNLOCK", "johndoe2",
+                        new TestHint(lockApi + "/", "", "A user with role MERCHANT" +
+                                " must not have access to " + lockApi + "/")), // 62
+
+                () -> testLock(lockApi + "/", johndoe2, 403, "UNLOCK", "johndoe2",
+                        new TestHint(lockApi + "/", "", "A user with role SUPPORT" +
+                                " must not have access to " + lockApi + "/")), // 63
+
+                () -> testLock(lockApi, null, 401, "UNLOCK", "johndoe2",
+                        new TestHint(lockApi, "", "A user with role ANONYMOUS" +
+                                " must not have access to " + lockApi)), // 64
+
+                () -> testRole(roleApi, johndoe2,403,"SUPPORT", "johndoe2",
+                        new TestHint(roleApi, "", "A user with role SUPPORT" +
+                                " must not have access to " + roleApi)), // 65
+
+                () -> testRole(roleApi, johndoe3,403,"SUPPORT", "johndoe2",
+                        new TestHint(roleApi, "", "A user with role MERCHANT" +
+                                " must not have access to " + roleApi)), // 66
+
+                () -> testRole(roleApi, null,401,"SUPPORT", "johndoe2",
+                        new TestHint(roleApi, "", "A user with role ANONYMOUS" +
+                                " must not have access to " + roleApi)), // 67
+
+                () -> testRole(roleApi + "/", johndoe2,403,"SUPPORT", "johndoe2",
+                        new TestHint(roleApi + "/", "", "A user with role SUPPORT" +
+                                " must not have access to " + roleApi + "/")), // 68
+
+                () -> testRole(roleApi + "/", johndoe3,403,"SUPPORT", "johndoe2",
+                        new TestHint(roleApi + "/", "", "A user with role MERCHANT" +
+                                " must not have access to " + roleApi + "/")), // 69
+
+        };
+    }
+  learner_created: false
+- name: src/antifraud/business/userService.java
+  visible: true
+  text: |
+    package antifraud.business;
+
+
+    import antifraud.exceptions.badRequestException;
+    import antifraud.exceptions.failedTransactionException;
+    import antifraud.exceptions.userAlreadyExistException;
+    import antifraud.exceptions.userNotFoundException;
+    import antifraud.models.enums.transactionResultTypes;
+    import antifraud.models.requests.registerRequest;
+    import antifraud.models.responses.registerResponse;
+    import antifraud.persitence.user;
+    import antifraud.persitence.userRepository;
+    import jakarta.transaction.Transactional;
+    import org.springframework.beans.factory.annotation.Autowired;
+    import org.springframework.http.converter.HttpMessageNotReadableException;
+    import org.springframework.security.crypto.password.PasswordEncoder;
+    import org.springframework.stereotype.Service;
+
+    import java.util.List;
+    import java.util.Map;
+
+    @Service
+    public class userService {
+
+        private final userRepository userRepository;
+        private final PasswordEncoder passwordEncoder;
+
+        @Autowired
+        userService(userRepository userRepository, PasswordEncoder passwordEncoder) {
+            this.userRepository = userRepository;
+            this.passwordEncoder = passwordEncoder;
+        }
+
+        @Transactional
+        public registerResponse saveUser(registerRequest request) {
+            String name = request.name();
+            String username = request.username();
+            String password = request.password();
+
+            if(name == null || username == null || password == null || name.isEmpty() || username.isEmpty() || password.isEmpty()) {
+                System.out.println(findAll().size());
+                throw new badRequestException("nulls or empty values are not allowed");
+            }
+            try {
+                System.out.println(findAll().size());
+                userRepository.save(new user(name, username, password));
+                long id = userRepository.findTop1ByUsername(username).getId();
+                return new registerResponse(id, name, username);
+            }
+            catch (Exception e) {
+                throw new userAlreadyExistException(e.getMessage());
+            }
+
+        }
+
+        @Transactional
+        public Map<String,String> deleteUser(String username) {
+            long count = userRepository.deleteByUsername(username);
+
+            if(count == 0)
+                throw new userNotFoundException("user not found");
+
+            return Map.of("username",username,"status","Deleted successfully!");
+        }
+
+        public List<user> findAll() {
+            return (List<user>) userRepository.findAll();
+        }
+
+    }
+  learner_created: true
+- name: src/antifraud/models/responses/transactionResponse.java
+  visible: true
+  text: |
+    package antifraud.models.responses;
+
+    public record transactionResponse(String result) {
+    }
+  learner_created: true
+- name: src/antifraud/configuration/authorization/AuthorizationConfig.java
+  visible: true
+  text: |-
+    package antifraud.configuration.authorization;
+
+    import antifraud.configuration.authentication.userDetailsServiceImpl;
+    import org.springframework.beans.factory.annotation.Autowired;
+    import org.springframework.context.annotation.Bean;
+    import org.springframework.context.annotation.Configuration;
+    import org.springframework.http.HttpMethod;
+    import org.springframework.security.config.Customizer;
+    import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
+    import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+    import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+    import org.springframework.security.config.annotation.web.configuration.WebSecurityConfiguration;
+    import org.springframework.security.config.http.SessionCreationPolicy;
+    import org.springframework.security.crypto.password.NoOpPasswordEncoder;
+    import org.springframework.security.crypto.password.PasswordEncoder;
+    import org.springframework.security.web.SecurityFilterChain;
+
+
+    @Configuration
+    public class AuthorizationConfig  {
+        private final userDetailsServiceImpl userDetailsServiceImpl;
+
+        @Autowired
+        public AuthorizationConfig(userDetailsServiceImpl userDetailsServiceImpl) {
+            this.userDetailsServiceImpl = userDetailsServiceImpl;
+        }
+
+        @Bean
+        public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+            return http
+                    .authorizeHttpRequests(requests -> requests
+                            .requestMatchers(HttpMethod.POST, "/api/auth/user").permitAll()
+                            .requestMatchers("/actuator/shutdown").permitAll()
+                            .requestMatchers("/error").permitAll()
+                            .requestMatchers("/api/auth/list").permitAll()
+                            .requestMatchers(HttpMethod.DELETE, "/api/auth/user/*").authenticated()
+                            .anyRequest().authenticated()
+                    )
+                    .httpBasic(Customizer.withDefaults())
+                    .csrf().disable()
+                    .headers(headers -> headers.frameOptions().disable())
+                    .sessionManagement(session -> session
+                            .sessionCreationPolicy(SessionCreationPolicy.ALWAYS)
+                    )
+                    .userDetailsService(userDetailsServiceImpl)
+                    .build();
+        }
+    }
+  learner_created: true
+- name: service_db.mv.db
+  visible: true
+  text: "H:2,block:9,blockSize:1000,chunk:8,clean:1,created:189bbef64a2,format:2,version:8,fletcher:9afcaf18\n\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0H:2,block:9,blockSize:1000,chunk:8,clean:1,created:189bbef64a2,format:2,version:8,fletcher:9afcaf18\n\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0chunk:1,block:2,len:1,map:9,max:410,next:3,pages:4,root:400000f746,time:29,version:1,toc:427\
+    \                                                                            \
+    \ \n\0\0\x01g\x01�\0\x02\x06\0\b5803b3f1\b59a6a071\b64544ee4\b8fa25204\beabe0274\b\
+    f4470498,org.h2.mvstore.tx.VersionedValueType$Factory%org.h2.mvstore.db.RowDataType$Factory\x04\
+    \x05\0\0\0\0\0\0%org.h2.mvstore.type.ByteArrayDataType#org.h2.mvstore.db.NullValueDataType\
+    \ org.h2.mvstore.type.LongDataType2org.h2.mvstore.db.LobStorageMap$BlobReference$Type-org.h2.mvstore.db.LobStorageMap$BlobMeta$Type\0\
+    \0\0$\x024\x01\x05\x01\0\x01\0! &XSET CREATE_BUILD 214\0\0\x01�\x03�\x02\x01\x10\
+    \0\x05map.2\x05map.3\x05map.4\x05map.5\x05map.6\x05map.7\x05map.8\x05map.9\x06\
+    name._\fname.lobData\vname.lobMap\vname.lobRef\x15name.openTransactions\fname.table.0\x0f\
+    name.tempLobMap\x0ename.undoLog.1\x06name:_\x15name:openTransactions\x0ename:undoLog.1&name:table.0,key:8fa25204,val:5803b3f1%name:lobMap,key:8fa25204,val:f4470498)name:tempLobMap,key:8fa25204,val:59a6a071%name:lobRef,key:eabe0274,val:64544ee4&name:lobData,key:8fa25204,val:59a6a071\x01\
+    2\x019\x016\x018\x013\x015\x017\x014\0\0\0J\x03�\x03\0\x04\0\ameta.id\x06root.1\x06\
+    root.2\x06root.5\x011\n4000008d50\n4000002a8e\n4000008442\0\0\0�\0\0*�\0\0\x01\
+    @\0\0�B\0\0\0@\0\0�P\0\0\0\0\0\0�F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0chunk:1,block:2,version:1,fletcher:84d0d5f6                          \
+    \                                                          \nchunk:2,block:3,len:1,map:9,max:160,next:4,pages:2,root:80000041cc,time:252,version:2,toc:1ee\
+    \                                                                            \
+    \ \n\0\0\0\\\0�\0\x05\x02\0\x01\x02\0! &XSET CREATE_BUILD 214\" \"\n2CREATE USER\
+    \ IF NOT EXISTS \"\" SALT '' HASH '' ADMIN\0\0\0�\x01�\x01\0\x05\0\achunk.1\a\
+    meta.id\x06root.1\x06root.2\x06root.5�\x01chunk:1,block:2,len:1,liveMax:380,livePages:2,map:9,max:410,next:3,pages:4,root:400000f746,time:29,unusedAtVersion:1,version:1,toc:427,occupancy:0a\x01\
+    1\n4000008d50\n4000002a8e\n8000002ac6\0\0\x01@\0\0*�\0\0\0\0\0\0A�geMap$BlobMeta$Type\0\
+    \0\0$\x024\x01\x05\x01\0\x01\0! &XSET CREATE_BUILD 214\0\0\x01�\x03�\x02\x01\x10\
+    \0\x05map.2\x05map.3\x05map.4\x05map.5\x05map.6\x05map.7\x05map.8\x05map.9\x06\
+    name._\fname.lobData\vname.lobMap\vname.lobRef\x15name.openTransactions\fname.table.0\x0f\
+    name.tempLobMap\x0ename.undoLog.1\x06name:_\x15name:openTransactions\x0ename:undoLog.1&name:table.0,key:8fa25204,val:5803b3f1%name:lobMap,key:8fa25204,val:f4470498)name:tempLobMap,key:8fa25204,val:59a6a071%name:lobRef,key:eabe0274,val:64544ee4&name:lobData,key:8fa25204,val:59a6a071\x01\
+    2\x019\x016\x018\x013\x015\x017\x014\0\0\0J\x03�\x03\0\x04\0\ameta.id\x06root.1\x06\
+    root.2\x06root.5\x011\n4000008d50\n4000002a8e\n4000008442\0\0\0�\0\0*�\0\0\x01\
+    @\0\0�B\0\0\0@\0\0�P\0\0\0\0\0\0�F\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0chunk:2,block:3,version:2,fletcher:95d0d8f6                          \
+    \                                                          \nchunk:3,block:4,len:1,map:d,max:e00,next:5,pages:4,root:c00002bf90,time:447,version:3,toc:c95\
+    \                                                                            \
+    \ \n\0\0\x02�\x028\0\x02\n\0\b5803b3f1\b59a6a071\b64544ee4\b6ad869dc\b8b8a6dfe\b\
+    8b8a7940\b8fa25204\bb16fc38a\beabe0274\bf4470498,org.h2.mvstore.tx.VersionedValueType$Factory%org.h2.mvstore.db.RowDataType$Factory\x04\
+    \x05\0\0\0\0\0\0%org.h2.mvstore.type.ByteArrayDataType#org.h2.mvstore.db.NullValueDataType,org.h2.mvstore.tx.VersionedValueType$Factory%org.h2.mvstore.db.RowDataType$Factory\x05\
+    \x06\0\0\0\0\0\0\0%org.h2.mvstore.db.RowDataType$Factory\x05\x02\x02\x02\x01\x01\
+    %org.h2.mvstore.db.RowDataType$Factory\x05\x02\x02\x02\x04\x01 org.h2.mvstore.type.LongDataType,org.h2.mvstore.tx.VersionedValueType$Factory#org.h2.mvstore.db.NullValueDataType2org.h2.mvstore.db.LobStorageMap$BlobReference$Type-org.h2.mvstore.db.LobStorageMap$BlobMeta$Type\0\
+    \0\x05\x01\x069\x01\x05\n\0\x01\x02\x03\x04\x05\x06\a\b\t\n\0! &XSET CREATE_BUILD\
+    \ 214\" \"\n2CREATE USER IF NOT EXISTS \"\" SALT '' HASH '' ADMIN#  \n�\x02CREATE\
+    \ CACHED TABLE \"PUBLIC\".\"USERS\"(\n    \"ID\" BIGINT GENERATED BY DEFAULT AS\
+    \ IDENTITY SEQUENCE \"PUBLIC\".\"SYSTEM_SEQUENCE_01818177_6CE7_4580_815C_87947B3A2400\"\
+    \ NOT NULL,\n    \"NAME\" CHARACTER VARYING(255),\n    \"PASSWORD\" CHARACTER\
+    \ VARYING(255),\n    \"ROLE\" CHARACTER VARYING(255),\n    \"USERNAME\" CHARACTER\
+    \ VARYING(255)\n)$ #\nmCREATE SEQUENCE \"PUBLIC\".\"SYSTEM_SEQUENCE_01818177_6CE7_4580_815C_87947B3A2400\"\
+    \ START WITH 1 BELONGS_TO_TABLE% !\nECREATE PRIMARY KEY \"PUBLIC\".\"PRIMARY_KEY_4\"\
+    \ ON \"PUBLIC\".\"USERS\"(\"ID\")& %\ntALTER TABLE \"PUBLIC\".\"USERS\" ADD CONSTRAINT\
+    \ \"PUBLIC\".\"CONSTRAINT_4\" PRIMARY KEY(\"ID\") INDEX \"PUBLIC\".\"PRIMARY_KEY_4\"\
+    ' !\nkCREATE UNIQUE INDEX \"PUBLIC\".\"UK_3G1J96G94XPK3LPXL2QBL985X_INDEX_4\"\
+    \ ON \"PUBLIC\".\"USERS\"(\"NAME\" NULLS FIRST)( %\n�\x01ALTER TABLE \"PUBLIC\"\
+    .\"USERS\" ADD CONSTRAINT \"PUBLIC\".\"UK_3G1J96G94XPK3LPXL2QBL985X\" UNIQUE(\"\
+    NAME\") INDEX \"PUBLIC\".\"UK_3G1J96G94XPK3LPXL2QBL985X_INDEX_4\") !\noCREATE\
+    \ UNIQUE INDEX \"PUBLIC\".\"UK_R43AF9AP4EDM43MMTQ01ODDJ6_INDEX_4\" ON \"PUBLIC\"\
+    .\"USERS\"(\"USERNAME\" NULLS FIRST)* %\n�\x01ALTER TABLE \"PUBLIC\".\"USERS\"\
+    \ ADD CONSTRAINT \"PUBLIC\".\"UK_R43AF9AP4EDM43MMTQ01ODDJ6\" UNIQUE(\"USERNAME\"\
+    ) INDEX \"PUBLIC\".\"UK_R43AF9AP4EDM43MMTQ01ODDJ6_INDEX_4\"\0\0\x02�\n�\x02\x01\
+    \x18\0\x05map.2\x05map.3\x05map.4\x05map.5\x05map.6\x05map.7\x05map.8\x05map.9\x05\
+    map.a\x05map.b\x05map.c\x05map.d\x06name._\fname.index.7\fname.index.9\fname.lobData\v\
+    name.lobMap\vname.lobRef\x15name.openTransactions\fname.table.0\fname.table.3\x0f\
+    name.tempLobMap\x0ename.undoLog.1\x0ename.undoLog.2\x06name:_\x15name:openTransactions\x0e\
+    name:undoLog.1&name:table.0,key:8fa25204,val:5803b3f1%name:lobMap,key:8fa25204,val:f4470498)name:tempLobMap,key:8fa25204,val:59a6a071%name:lobRef,key:eabe0274,val:64544ee4&name:lobData,key:8fa25204,val:59a6a071\x1e\
+    name:undoLog.2,createVersion:26name:table.3,createVersion:2,key:8fa25204,val:6ad869dc6name:index.7,createVersion:2,key:8b8a6dfe,val:b16fc38a6name:index.9,createVersion:2,key:8b8a7940,val:b16fc38a\x01\
+    2\x01c\x01d\x019\x016\x018\x013\x015\x01b\x017\x014\x01a\0\0\x01�\vj\x03\0\x06\
+    \0\achunk.1\achunk.2\ameta.id\x06root.1\x06root.2\x06root.5�\x01chunk:1,block:2,len:1,liveMax:0,livePages:0,map:9,max:410,next:3,pages:4,root:400000f746,time:29,unused:447,unusedAtVersion:2,version:1,toc:427,occupancy:0f�\
+    \x01chunk:2,block:3,len:1,liveMax:0,livePages:0,map:9,max:160,next:4,pages:2,root:80000041cc,time:252,unused:447,unusedAtVersion:2,version:2,toc:1ee,occupancy:03\x01\
+    1\nc000020f12\nc000002ad2\nc00000ced6\0\0\0�\0\0*�\0\0\x01@\0\0��\0\0\0@\0\x02\
+    \x0f\x12\0\0\0\0\0\x02��\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0chunk:3,block:4,version:3,fletcher:a6d0dbf6\
+    \                                                                            \
+    \        \nchunk:4,block:5,len:1,map:d,max:9c0,next:6,pages:6,root:10000019a52,time:c0a,version:4,pinCount:1,toc:8eb\
+    \                                                                 \n\0\0\09\0�\
+    \0\x04\x03\0����� ����� ����� \v\x01\0\f\x01NJohn Doe 1\0\n\x01Ljohndoe1\0\0\0\
+    \x05\x11\x05�\x01\x05\n\0\x01\x02\x03\x04\x05\x06\a\b\t\n\0! &XSET CREATE_BUILD\
+    \ 214\" \"\n2CREATE USER IF NOT EXISTS \"\" SALT '' HASH '' ADMIN#  \n�\x02CREATE\
+    \ CACHED TABLE \"PUBLIC\".\"USERS\"(\n    \"ID\" BIGINT GENERATED BY DEFAULT AS\
+    \ IDENTITY SEQUENCE \"PUBLIC\".\"SYSTEM_SEQUENCE_01818177_6CE7_4580_815C_87947B3A2400\"\
+    \ NOT NULL,\n    \"NAME\" CHARACTER VARYING(255),\n    \"PASSWORD\" CHARACTER\
+    \ VARYING(255),\n    \"ROLE\" CHARACTER VARYING(255),\n    \"USERNAME\" CHARACTER\
+    \ VARYING(255)\n)$ #\n}CREATE SEQUENCE \"PUBLIC\".\"SYSTEM_SEQUENCE_01818177_6CE7_4580_815C_87947B3A2400\"\
+    \ START WITH 1 RESTART WITH 33 BELONGS_TO_TABLE% !\nECREATE PRIMARY KEY \"PUBLIC\"\
+    .\"PRIMARY_KEY_4\" ON \"PUBLIC\".\"USERS\"(\"ID\")& %\ntALTER TABLE \"PUBLIC\"\
+    .\"USERS\" ADD CONSTRAINT \"PUBLIC\".\"CONSTRAINT_4\" PRIMARY KEY(\"ID\") INDEX\
+    \ \"PUBLIC\".\"PRIMARY_KEY_4\"' !\nkCREATE UNIQUE INDEX \"PUBLIC\".\"UK_3G1J96G94XPK3LPXL2QBL985X_INDEX_4\"\
+    \ ON \"PUBLIC\".\"USERS\"(\"NAME\" NULLS FIRST)( %\n�\x01ALTER TABLE \"PUBLIC\"\
+    .\"USERS\" ADD CONSTRAINT \"PUBLIC\".\"UK_3G1J96G94XPK3LPXL2QBL985X\" UNIQUE(\"\
+    NAME\") INDEX \"PUBLIC\".\"UK_3G1J96G94XPK3LPXL2QBL985X_INDEX_4\") !\noCREATE\
+    \ UNIQUE INDEX \"PUBLIC\".\"UK_R43AF9AP4EDM43MMTQ01ODDJ6_INDEX_4\" ON \"PUBLIC\"\
+    .\"USERS\"(\"USERNAME\" NULLS FIRST)* %\n�\x01ALTER TABLE \"PUBLIC\".\"USERS\"\
+    \ ADD CONSTRAINT \"PUBLIC\".\"UK_R43AF9AP4EDM43MMTQ01ODDJ6\" UNIQUE(\"USERNAME\"\
+    ) INDEX \"PUBLIC\".\"UK_R43AF9AP4EDM43MMTQ01ODDJ6_INDEX_4\"\0\0\0:\x05�\x02\v\x01\
+    \0\x01\x01����� \x011NJohn Doe 1PoMoa3VvqnLxWHUSERLjohndoe1\0\0\0\x1e\x065\x03\
+    \f\x01\0\x01NJohn Doe 1\x01����� \x01\0\0\0\x1c\x06U\x04\n\x01\0\x01Ljohndoe1\x01\
+    ����� \x01\0\0\x02�\x04�\x05\0\v\0\achunk.1\achunk.2\achunk.3\ameta.id\x06root.1\x06\
+    root.2\x06root.4\x06root.5\x06root.b\x06root.c\x06root.d�\x01chunk:1,block:2,len:1,liveMax:0,livePages:0,map:9,max:410,next:3,pages:4,root:400000f746,time:29,unused:447,unusedAtVersion:2,version:1,toc:427,occupancy:0f�\
+    \x01chunk:2,block:3,len:1,liveMax:0,livePages:0,map:9,max:160,next:4,pages:2,root:80000041cc,time:252,unused:447,unusedAtVersion:2,version:2,toc:1ee,occupancy:03�\
+    \x01chunk:3,block:4,len:1,liveMax:600,livePages:2,map:d,max:e00,next:5,pages:4,root:c00002bf90,time:447,unusedAtVersion:3,version:3,toc:c95,occupancy:0a\x01\
+    1\nc000020f12\nc000002ad2\v10000002ac4\v10000003916\v10000017d44\v10000018bc0\v\
+    10000019340\0\0\x01\0\0\0*�\0\0\x01@\0\09\x16\0\0\x02�\0\x01}D\0\0\x03\0\0\x01\
+    ��\0\0\x03@\0\x01�@\0\0\0\0\0\x01�RndoLog.1\x0ename.undoLog.2\x06name:_\x15name:openTransactions\x0e\
+    name:undoLog.1&name:table.0,key:8fa25204,val:5803b3f1%name:lobMap,key:8fa25204,val:f4470498)name:tempLobMap,key:8fa25204,val:59a6a071%name:lobRef,key:eabe0274,val:64544ee4&name:lobData,key:8fa25204,val:59a6a071\x1e\
+    name:undoLog.2,createVersion:26name:table.3,createVersion:2,key:8fa25204,val:6ad869dc6name:index.7,createVersion:2,key:8b8a6dfe,val:b16fc38a6name:index.9,createVersion:2,key:8b8a7940,val:b16fc38a\x01\
+    2\x01c\x01d\x019\x016\x018\x013\x015\x01b\x017\x014\x01a\0\0\x01�\vj\x03\0\x06\
+    \0\achunk.1\achunk.2\ameta.id\x06root.1\x06root.2\x06root.5�\x01chunk:1,block:2,len:1,liveMax:0,livePages:0,map:9,max:410,next:3,pages:4,root:400000f746,time:29,unused:447,unusedAtVersion:2,version:1,toc:427,occupancy:0f�\
+    \x01chunk:2,block:3,len:1,liveMax:0,livePages:0,map:9,max:160,next:4,pages:2,root:80000041cc,time:252,unused:447,unusedAtVersion:2,version:2,toc:1ee,occupancy:03\x01\
+    1\nc000020f12\nc000002ad2\nc00000ced6\0\0\0�\0\0*�\0\0\x01@\0\0��\0\0\0@\0\x02\
+    \x0f\x12\0\0\0\0\0\x02��\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0chunk:4,block:5,version:4,fletcher:b7d0def6\
+    \                                                                            \
+    \        \nchunk:5,block:6,len:1,map:d,max:480,next:7,pages:4,root:14000004294,time:e34,version:5,toc:418\
+    \                                                                            \n\
+    \0\0\03\0�\0\v\x01\0\x01\01NJohn Doe 1PoMoa3VvqnLxWHUSERLjohndoe1\0\0\0\x17\0�\
+    \x01\f\x01\0\x01NJohn Doe 1\0\0\0\0\x15\0�\x02\n\x01\0\x01Ljohndoe1\0\0\0\x03\x0e\
+    \x02\x01\x03\0\v\0\achunk.1\achunk.2\achunk.3\achunk.4\ameta.id\x06root.1\x06\
+    root.2\x06root.5\x06root.b\x06root.c\x06root.d�\x01chunk:1,block:2,len:1,liveMax:0,livePages:0,map:9,max:410,next:3,pages:4,root:400000f746,time:29,unused:447,unusedAtVersion:2,version:1,toc:427,occupancy:0f�\
+    \x01chunk:2,block:3,len:1,liveMax:0,livePages:0,map:9,max:160,next:4,pages:2,root:80000041cc,time:252,unused:447,unusedAtVersion:2,version:2,toc:1ee,occupancy:03�\
+    \x01chunk:3,block:4,len:1,liveMax:600,livePages:2,map:d,max:e00,next:5,pages:4,root:c00002bf90,time:447,unusedAtVersion:3,version:3,toc:c95,occupancy:0a�\
+    \x01chunk:4,block:5,len:1,liveMax:600,livePages:1,map:d,max:9c0,next:6,pages:6,root:10000019a52,time:c0a,unusedAtVersion:4,version:4,toc:8eb,occupancy:3d\x01\
+    1\nc000020f12\nc000002ad2\v10000003916\v14000002ac4\v14000003780\v14000003d40\0\
+    \0\x02�\0\0*�\0\0\x03\0\0\07�\0\0\x03@\0\0=@\0\0\0\0\0\0B�LS FIRST)( %\n�\x01\
+    ALTER TABLE \"PUBLIC\".\"USERS\" ADD CONSTRAINT \"PUBLIC\".\"UK_3G1J96G94XPK3LPXL2QBL985X\"\
+    \ UNIQUE(\"NAME\") INDEX \"PUBLIC\".\"UK_3G1J96G94XPK3LPXL2QBL985X_INDEX_4\")\
+    \ !\noCREATE UNIQUE INDEX \"PUBLIC\".\"UK_R43AF9AP4EDM43MMTQ01ODDJ6_INDEX_4\"\
+    \ ON \"PUBLIC\".\"USERS\"(\"USERNAME\" NULLS FIRST)* %\n�\x01ALTER TABLE \"PUBLIC\"\
+    .\"USERS\" ADD CONSTRAINT \"PUBLIC\".\"UK_R43AF9AP4EDM43MMTQ01ODDJ6\" UNIQUE(\"\
+    USERNAME\") INDEX \"PUBLIC\".\"UK_R43AF9AP4EDM43MMTQ01ODDJ6_INDEX_4\"\0\0\0:\x05\
+    �\x02\v\x01\0\x01\x01����� \x011NJohn Doe 1PoMoa3VvqnLxWHUSERLjohndoe1\0\0\0\x1e\
+    \x065\x03\f\x01\0\x01NJohn Doe 1\x01����� \x01\0\0\0\x1c\x06U\x04\n\x01\0\x01\
+    Ljohndoe1\x01����� \x01\0\0\x02�\x04�\x05\0\v\0\achunk.1\achunk.2\achunk.3\ameta.id\x06\
+    root.1\x06root.2\x06root.4\x06root.5\x06root.b\x06root.c\x06root.d�\x01chunk:1,block:2,len:1,liveMax:0,livePages:0,map:9,max:410,next:3,pages:4,root:400000f746,time:29,unused:447,unusedAtVersion:2,version:1,toc:427,occupancy:0f�\
+    \x01chunk:2,block:3,len:1,liveMax:0,livePages:0,map:9,max:160,next:4,pages:2,root:80000041cc,time:252,unused:447,unusedAtVersion:2,version:2,toc:1ee,occupancy:03�\
+    \x01chunk:3,block:4,len:1,liveMax:600,livePages:2,map:d,max:e00,next:5,pages:4,root:c00002bf90,time:447,unusedAtVersion:3,version:3,toc:c95,occupancy:0a\x01\
+    1\nc000020f12\nc000002ad2\v10000002ac4\v10000003916\v10000017d44\v10000018bc0\v\
+    10000019340\0\0\x01\0\0\0*�\0\0\x01@\0\09\x16\0\0\x02�\0\x01}D\0\0\x03\0\0\x01\
+    ��\0\0\x03@\0\x01�@\0\0\0\0\0\x01�RndoLog.1\x0ename.undoLog.2\x06name:_\x15name:openTransactions\x0e\
+    name:undoLog.1&name:table.0,key:8fa25204,val:5803b3f1%name:lobMap,key:8fa25204,val:f4470498)name:tempLobMap,key:8fa25204,val:59a6a071%name:lobRef,key:eabe0274,val:64544ee4&name:lobData,key:8fa25204,val:59a6a071\x1e\
+    name:undoLog.2,createVersion:26name:table.3,createVersion:2,key:8fa25204,val:6ad869dc6name:index.7,createVersion:2,key:8b8a6dfe,val:b16fc38a6name:index.9,createVersion:2,key:8b8a7940,val:b16fc38a\x01\
+    2\x01c\x01d\x019\x016\x018\x013\x015\x01b\x017\x014\x01a\0\0\x01�\vj\x03\0\x06\
+    \0\achunk.1\achunk.2\ameta.id\x06root.1\x06root.2\x06root.5�\x01chunk:1,block:2,len:1,liveMax:0,livePages:0,map:9,max:410,next:3,pages:4,root:400000f746,time:29,unused:447,unusedAtVersion:2,version:1,toc:427,occupancy:0f�\
+    \x01chunk:2,block:3,len:1,liveMax:0,livePages:0,map:9,max:160,next:4,pages:2,root:80000041cc,time:252,unused:447,unusedAtVersion:2,version:2,toc:1ee,occupancy:03\x01\
+    1\nc000020f12\nc000002ad2\nc00000ced6\0\0\0�\0\0*�\0\0\x01@\0\0��\0\0\0@\0\x02\
+    \x0f\x12\0\0\0\0\0\x02��\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0chunk:5,block:6,version:5,fletcher:c8d0e1f6\
+    \                                                                            \
+    \        \nchunk:6,block:7,len:1,map:d,max:a00,next:8,pages:2,root:18000016ed4,time:f05,version:6,toc:970\
+    \                                                                            \n\
+    \0\0\x05\x10\x05�\0\x05\n\0\x01\x02\x03\x04\x05\x06\a\b\t\n\0! &XSET CREATE_BUILD\
+    \ 214\" \"\n2CREATE USER IF NOT EXISTS \"\" SALT '' HASH '' ADMIN#  \n�\x02CREATE\
+    \ CACHED TABLE \"PUBLIC\".\"USERS\"(\n    \"ID\" BIGINT GENERATED BY DEFAULT AS\
+    \ IDENTITY SEQUENCE \"PUBLIC\".\"SYSTEM_SEQUENCE_01818177_6CE7_4580_815C_87947B3A2400\"\
+    \ NOT NULL,\n    \"NAME\" CHARACTER VARYING(255),\n    \"PASSWORD\" CHARACTER\
+    \ VARYING(255),\n    \"ROLE\" CHARACTER VARYING(255),\n    \"USERNAME\" CHARACTER\
+    \ VARYING(255)\n)$ #\n|CREATE SEQUENCE \"PUBLIC\".\"SYSTEM_SEQUENCE_01818177_6CE7_4580_815C_87947B3A2400\"\
+    \ START WITH 1 RESTART WITH 2 BELONGS_TO_TABLE% !\nECREATE PRIMARY KEY \"PUBLIC\"\
+    .\"PRIMARY_KEY_4\" ON \"PUBLIC\".\"USERS\"(\"ID\")& %\ntALTER TABLE \"PUBLIC\"\
+    .\"USERS\" ADD CONSTRAINT \"PUBLIC\".\"CONSTRAINT_4\" PRIMARY KEY(\"ID\") INDEX\
+    \ \"PUBLIC\".\"PRIMARY_KEY_4\"' !\nkCREATE UNIQUE INDEX \"PUBLIC\".\"UK_3G1J96G94XPK3LPXL2QBL985X_INDEX_4\"\
+    \ ON \"PUBLIC\".\"USERS\"(\"NAME\" NULLS FIRST)( %\n�\x01ALTER TABLE \"PUBLIC\"\
+    .\"USERS\" ADD CONSTRAINT \"PUBLIC\".\"UK_3G1J96G94XPK3LPXL2QBL985X\" UNIQUE(\"\
+    NAME\") INDEX \"PUBLIC\".\"UK_3G1J96G94XPK3LPXL2QBL985X_INDEX_4\") !\noCREATE\
+    \ UNIQUE INDEX \"PUBLIC\".\"UK_R43AF9AP4EDM43MMTQ01ODDJ6_INDEX_4\" ON \"PUBLIC\"\
+    .\"USERS\"(\"USERNAME\" NULLS FIRST)* %\n�\x01ALTER TABLE \"PUBLIC\".\"USERS\"\
+    \ ADD CONSTRAINT \"PUBLIC\".\"UK_R43AF9AP4EDM43MMTQ01ODDJ6\" UNIQUE(\"USERNAME\"\
+    ) INDEX \"PUBLIC\".\"UK_R43AF9AP4EDM43MMTQ01ODDJ6_INDEX_4\"\0\0\x03�\x06\b\x01\
+    \0\f\0\achunk.1\achunk.2\achunk.3\achunk.4\achunk.5\ameta.id\x06root.1\x06root.2\x06\
+    root.5\x06root.b\x06root.c\x06root.d�\x01chunk:1,block:2,len:1,liveMax:0,livePages:0,map:9,max:410,next:3,pages:4,root:400000f746,time:29,unused:447,unusedAtVersion:2,version:1,toc:427,occupancy:0f�\
+    \x01chunk:2,block:3,len:1,liveMax:0,livePages:0,map:9,max:160,next:4,pages:2,root:80000041cc,time:252,unused:447,unusedAtVersion:2,version:2,toc:1ee,occupancy:03�\
+    \x01chunk:3,block:4,len:1,liveMax:600,livePages:2,map:d,max:e00,next:5,pages:4,root:c00002bf90,time:447,unusedAtVersion:3,version:3,toc:c95,occupancy:0a�\
+    \x01chunk:4,block:5,len:1,liveMax:0,livePages:0,map:d,max:9c0,next:6,pages:6,root:10000019a52,time:c0a,unused:f05,unusedAtVersion:5,version:4,toc:8eb,occupancy:3f�\
+    \x01chunk:5,block:6,len:1,liveMax:80,livePages:3,map:d,max:480,next:7,pages:4,root:14000004294,time:e34,unusedAtVersion:5,version:5,toc:418,occupancy:08\x01\
+    1\nc000020f12\nc000002ad2\v18000002ad6\v14000002ac4\v14000003780\v14000003d40\0\
+    \0\x01@\0\0*�\0\0\0\0\0\x01n�3b3f1%name:lobMap,key:8fa25204,val:f4470498)name:tempLobMap,key:8fa25204,val:59a6a071%name:lobRef,key:eabe0274,val:64544ee4&name:lobData,key:8fa25204,val:59a6a071\x1e\
+    name:undoLog.2,createVersion:26name:table.3,createVersion:2,key:8fa25204,val:6ad869dc6name:index.7,createVersion:2,key:8b8a6dfe,val:b16fc38a6name:index.9,createVersion:2,key:8b8a7940,val:b16fc38a\x01\
+    2\x01c\x01d\x019\x016\x018\x013\x015\x01b\x017\x014\x01a\0\0\x01�\vj\x03\0\x06\
+    \0\achunk.1\achunk.2\ameta.id\x06root.1\x06root.2\x06root.5�\x01chunk:1,block:2,len:1,liveMax:0,livePages:0,map:9,max:410,next:3,pages:4,root:400000f746,time:29,unused:447,unusedAtVersion:2,version:1,toc:427,occupancy:0f�\
+    \x01chunk:2,block:3,len:1,liveMax:0,livePages:0,map:9,max:160,next:4,pages:2,root:80000041cc,time:252,unused:447,unusedAtVersion:2,version:2,toc:1ee,occupancy:03\x01\
+    1\nc000020f12\nc000002ad2\nc00000ced6\0\0\0�\0\0*�\0\0\x01@\0\0��\0\0\0@\0\x02\
+    \x0f\x12\0\0\0\0\0\x02��\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0chunk:6,block:7,version:6,fletcher:d9d0e4f6\
+    \                                                                            \
+    \        \nchunk:7,block:8,len:1,map:f,max:fb0,next:9,pages:6,root:1c000024b16,time:3c1a,version:7,toc:d96\
+    \                                                                            \n\
+    \0\0\x05\x11\x05�\0\x05\n\0\x01\x02\x03\x04\x05\x06\a\b\t\n\0! &XSET CREATE_BUILD\
+    \ 214\" \"\n2CREATE USER IF NOT EXISTS \"\" SALT '' HASH '' ADMIN#  \n�\x02CREATE\
+    \ CACHED TABLE \"PUBLIC\".\"USERS\"(\n    \"ID\" BIGINT GENERATED BY DEFAULT AS\
+    \ IDENTITY SEQUENCE \"PUBLIC\".\"SYSTEM_SEQUENCE_01818177_6CE7_4580_815C_87947B3A2400\"\
+    \ NOT NULL,\n    \"NAME\" CHARACTER VARYING(255),\n    \"PASSWORD\" CHARACTER\
+    \ VARYING(255),\n    \"ROLE\" CHARACTER VARYING(255),\n    \"USERNAME\" CHARACTER\
+    \ VARYING(255)\n)$ #\n}CREATE SEQUENCE \"PUBLIC\".\"SYSTEM_SEQUENCE_01818177_6CE7_4580_815C_87947B3A2400\"\
+    \ START WITH 1 RESTART WITH 34 BELONGS_TO_TABLE% !\nECREATE PRIMARY KEY \"PUBLIC\"\
+    .\"PRIMARY_KEY_4\" ON \"PUBLIC\".\"USERS\"(\"ID\")& %\ntALTER TABLE \"PUBLIC\"\
+    .\"USERS\" ADD CONSTRAINT \"PUBLIC\".\"CONSTRAINT_4\" PRIMARY KEY(\"ID\") INDEX\
+    \ \"PUBLIC\".\"PRIMARY_KEY_4\"' !\nkCREATE UNIQUE INDEX \"PUBLIC\".\"UK_3G1J96G94XPK3LPXL2QBL985X_INDEX_4\"\
+    \ ON \"PUBLIC\".\"USERS\"(\"NAME\" NULLS FIRST)( %\n�\x01ALTER TABLE \"PUBLIC\"\
+    .\"USERS\" ADD CONSTRAINT \"PUBLIC\".\"UK_3G1J96G94XPK3LPXL2QBL985X\" UNIQUE(\"\
+    NAME\") INDEX \"PUBLIC\".\"UK_3G1J96G94XPK3LPXL2QBL985X_INDEX_4\") !\noCREATE\
+    \ UNIQUE INDEX \"PUBLIC\".\"UK_R43AF9AP4EDM43MMTQ01ODDJ6_INDEX_4\" ON \"PUBLIC\"\
+    .\"USERS\"(\"USERNAME\" NULLS FIRST)* %\n�\x01ALTER TABLE \"PUBLIC\".\"USERS\"\
+    \ ADD CONSTRAINT \"PUBLIC\".\"UK_R43AF9AP4EDM43MMTQ01ODDJ6\" UNIQUE(\"USERNAME\"\
+    ) INDEX \"PUBLIC\".\"UK_R43AF9AP4EDM43MMTQ01ODDJ6_INDEX_4\"\0\0\0[\x05�\x01\v\x02\
+    \0\x01\x03\01NJohn Doe 1PoMoa3VvqnLxWHUSERLjohndoe13NJohn Doe 2PoMoa3VvqnLxWHUSERLjohndoe2\0\
+    \0\0#\x06<\x02\f\x02\0\x01NJohn Doe 1\x03NJohn Doe 2\0\0\0\0\x1f\x06#\x03\n\x02\
+    \0\x01Ljohndoe1\x03Ljohndoe2\0\0\0\x02�\x04�\x04\x01\x18\0\x05map.2\x05map.3\x05\
+    map.5\x05map.6\x05map.7\x05map.8\x05map.9\x05map.b\x05map.c\x05map.d\x05map.e\x05\
+    map.f\x06name._\fname.index.7\fname.index.9\fname.lobData\vname.lobMap\vname.lobRef\x15\
+    name.openTransactions\fname.table.0\fname.table.3\x0fname.tempLobMap\x0ename.undoLog.1\x0e\
+    name.undoLog.2\x06name:_\x15name:openTransactions&name:table.0,key:8fa25204,val:5803b3f1%name:lobMap,key:8fa25204,val:f4470498)name:tempLobMap,key:8fa25204,val:59a6a071%name:lobRef,key:eabe0274,val:64544ee4&name:lobData,key:8fa25204,val:59a6a0716name:table.3,createVersion:2,key:8fa25204,val:6ad869dc6name:index.7,createVersion:2,key:8b8a6dfe,val:b16fc38a6name:index.9,createVersion:2,key:8b8a7940,val:b16fc38a\x1e\
+    name:undoLog.1,createVersion:6\x1ename:undoLog.2,createVersion:6\x012\x01c\x01\
+    d\x019\x016\x018\x013\x015\x01b\x017\x01e\x01f\0\0\x04j\nA\x05\0\n\0\achunk.1\a\
+    chunk.2\achunk.3\achunk.4\achunk.5\achunk.6\ameta.id\x06root.1\x06root.2\x06root.5\x06\
+    root.b\x06root.c\x06root.d�\x01chunk:1,block:2,len:1,liveMax:0,livePages:0,map:9,max:410,next:3,pages:4,root:400000f746,time:29,unused:447,unusedAtVersion:2,version:1,toc:427,occupancy:0f�\
+    \x01chunk:2,block:3,len:1,liveMax:0,livePages:0,map:9,max:160,next:4,pages:2,root:80000041cc,time:252,unused:447,unusedAtVersion:2,version:2,toc:1ee,occupancy:03�\
+    \x01chunk:3,block:4,len:1,liveMax:300,livePages:1,map:d,max:e00,next:5,pages:4,root:c00002bf90,time:447,unusedAtVersion:6,version:3,toc:c95,occupancy:0e�\
+    \x01chunk:4,block:5,len:1,liveMax:0,livePages:0,map:d,max:9c0,next:6,pages:6,root:10000019a52,time:c0a,unused:f05,unusedAtVersion:5,version:4,toc:8eb,occupancy:3f�\
+    \x01chunk:5,block:6,len:1,liveMax:0,livePages:0,map:d,max:480,next:7,pages:4,root:14000004294,time:e34,unused:3c1a,unusedAtVersion:6,version:5,toc:418,occupancy:0f�\
+    \x01chunk:6,block:7,len:1,liveMax:0,livePages:0,map:d,max:a00,next:8,pages:2,root:18000016ed4,time:f05,unused:3c1a,unusedAtVersion:6,version:6,toc:970,occupancy:03\x01\
+    1\v1c000019692\nc000002ad2\v1c000002b16\v1c000016f46\v1c000018602\v1c000018ec0\0\
+    \0\x01@\0\0+\x16\0\0\x02�\0\x01oF\0\0\x03\0\0\x01�\x02\0\0\x03@\0\x01��\0\0\0\
+    @\0\x01��\0\0\0\0\0\x02K\x16\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0chunk:7,block:8,version:7,fletcher:ead0e7f6\
+    \                                                                            \
+    \        \nchunk:8,block:9,len:1,map:f,max:c80,next:a,pages:5,root:200000186d6,time:3e08,version:8,toc:b25\
+    \                                                                            \n\
+    \0\0\x05\x10\x05�\0\x05\n\0\x01\x02\x03\x04\x05\x06\a\b\t\n\0! &XSET CREATE_BUILD\
+    \ 214\" \"\n2CREATE USER IF NOT EXISTS \"\" SALT '' HASH '' ADMIN#  \n�\x02CREATE\
+    \ CACHED TABLE \"PUBLIC\".\"USERS\"(\n    \"ID\" BIGINT GENERATED BY DEFAULT AS\
+    \ IDENTITY SEQUENCE \"PUBLIC\".\"SYSTEM_SEQUENCE_01818177_6CE7_4580_815C_87947B3A2400\"\
+    \ NOT NULL,\n    \"NAME\" CHARACTER VARYING(255),\n    \"PASSWORD\" CHARACTER\
+    \ VARYING(255),\n    \"ROLE\" CHARACTER VARYING(255),\n    \"USERNAME\" CHARACTER\
+    \ VARYING(255)\n)$ #\n|CREATE SEQUENCE \"PUBLIC\".\"SYSTEM_SEQUENCE_01818177_6CE7_4580_815C_87947B3A2400\"\
+    \ START WITH 1 RESTART WITH 4 BELONGS_TO_TABLE% !\nECREATE PRIMARY KEY \"PUBLIC\"\
+    .\"PRIMARY_KEY_4\" ON \"PUBLIC\".\"USERS\"(\"ID\")& %\ntALTER TABLE \"PUBLIC\"\
+    .\"USERS\" ADD CONSTRAINT \"PUBLIC\".\"CONSTRAINT_4\" PRIMARY KEY(\"ID\") INDEX\
+    \ \"PUBLIC\".\"PRIMARY_KEY_4\"' !\nkCREATE UNIQUE INDEX \"PUBLIC\".\"UK_3G1J96G94XPK3LPXL2QBL985X_INDEX_4\"\
+    \ ON \"PUBLIC\".\"USERS\"(\"NAME\" NULLS FIRST)( %\n�\x01ALTER TABLE \"PUBLIC\"\
+    .\"USERS\" ADD CONSTRAINT \"PUBLIC\".\"UK_3G1J96G94XPK3LPXL2QBL985X\" UNIQUE(\"\
+    NAME\") INDEX \"PUBLIC\".\"UK_3G1J96G94XPK3LPXL2QBL985X_INDEX_4\") !\noCREATE\
+    \ UNIQUE INDEX \"PUBLIC\".\"UK_R43AF9AP4EDM43MMTQ01ODDJ6_INDEX_4\" ON \"PUBLIC\"\
+    .\"USERS\"(\"USERNAME\" NULLS FIRST)* %\n�\x01ALTER TABLE \"PUBLIC\".\"USERS\"\
+    \ ADD CONSTRAINT \"PUBLIC\".\"UK_R43AF9AP4EDM43MMTQ01ODDJ6\" UNIQUE(\"USERNAME\"\
+    ) INDEX \"PUBLIC\".\"UK_R43AF9AP4EDM43MMTQ01ODDJ6_INDEX_4\"\0\0\03\x05�\x01\v\x01\
+    \0\x03\03NJohn Doe 2PoMoa3VvqnLxWHUSERLjohndoe2\0\0\0\x17\x05�\x02\f\x01\0\x03\
+    NJohn Doe 2\0\0\0\0\x15\x06\e\x03\n\x01\0\x03Ljohndoe2\0\0\0\x05\n\x03\x19\x04\
+    \0\x0e\0\achunk.1\achunk.2\achunk.3\achunk.4\achunk.5\achunk.6\achunk.7\ameta.id\x06\
+    root.1\x06root.2\x06root.5\x06root.b\x06root.c\x06root.d�\x01chunk:1,block:2,len:1,liveMax:0,livePages:0,map:9,max:410,next:3,pages:4,root:400000f746,time:29,unused:447,unusedAtVersion:2,version:1,toc:427,occupancy:0f�\
+    \x01chunk:2,block:3,len:1,liveMax:0,livePages:0,map:9,max:160,next:4,pages:2,root:80000041cc,time:252,unused:447,unusedAtVersion:2,version:2,toc:1ee,occupancy:03�\
+    \x01chunk:3,block:4,len:1,liveMax:300,livePages:1,map:d,max:e00,next:5,pages:4,root:c00002bf90,time:447,unusedAtVersion:6,version:3,toc:c95,occupancy:0e�\
+    \x01chunk:4,block:5,len:1,liveMax:0,livePages:0,map:d,max:9c0,next:6,pages:6,root:10000019a52,time:c0a,unused:f05,unusedAtVersion:5,version:4,toc:8eb,occupancy:3f�\
+    \x01chunk:5,block:6,len:1,liveMax:0,livePages:0,map:d,max:480,next:7,pages:4,root:14000004294,time:e34,unused:3c1a,unusedAtVersion:6,version:5,toc:418,occupancy:0f�\
+    \x01chunk:6,block:7,len:1,liveMax:0,livePages:0,map:d,max:a00,next:8,pages:2,root:18000016ed4,time:f05,unused:3c1a,unusedAtVersion:6,version:6,toc:970,occupancy:03�\
+    \x01chunk:7,block:8,len:1,liveMax:300,livePages:1,map:f,max:fb0,next:9,pages:6,root:1c000024b16,time:3c1a,unusedAtVersion:7,version:7,toc:d96,occupancy:2f\x01\
+    1\v1c000019692\nc000002ad2\v20000002b16\v20000016f04\v20000017bc0\v20000018180\0\
+    \0\x01@\0\0+\x16\0\0\x02�\0\x01o\x04\0\0\x03\0\0\x01{�\0\0\x03@\0\x01��\0\0\0\0\
+    \0\x01��version:3,toc:c95,occupancy:0e�\x01chunk:4,block:5,len:1,liveMax:0,livePages:0,map:d,max:9c0,next:6,pages:6,root:10000019a52,time:c0a,unused:f05,unusedAtVersion:5,version:4,toc:8eb,occupancy:3f�\
+    \x01chunk:5,block:6,len:1,liveMax:0,livePages:0,map:d,max:480,next:7,pages:4,root:14000004294,time:e34,unused:3c1a,unusedAtVersion:6,version:5,toc:418,occupancy:0f�\
+    \x01chunk:6,block:7,len:1,liveMax:0,livePages:0,map:d,max:a00,next:8,pages:2,root:18000016ed4,time:f05,unused:3c1a,unusedAtVersion:6,version:6,toc:970,occupancy:03\x01\
+    1\v1c000019692\nc000002ad2\v1c000002b16\v1c000016f46\v1c000018602\v1c000018ec0\0\
+    \0\x01@\0\0+\x16\0\0\x02�\0\x01oF\0\0\x03\0\0\x01�\x02\0\0\x03@\0\x01��\0\0\0\
+    @\0\x01��\0\0\0\0\0\x02K\x16\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
+    \0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0chunk:8,block:9,version:8,fletcher:fbd0eaf6\
+    \                                                                            \
+    \        \n"
+  learner_created: true
+- name: src/antifraud/exceptions/badRequestException.java
+  visible: true
+  text: |
+    package antifraud.exceptions;
+
+    import org.springframework.http.HttpStatus;
+    import org.springframework.web.bind.annotation.ResponseBody;
+    import org.springframework.web.bind.annotation.ResponseStatus;
+
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public class badRequestException extends RuntimeException{
+
+        public badRequestException(String errorMessage) {
+            super(errorMessage);
+        }
+    }
+  learner_created: true
+- name: src/antifraud/models/requests/registerRequest.java
+  visible: true
+  text: |
+    package antifraud.models.requests;
+
+    public record registerRequest(String name, String username, String password) {
+
+    }
+  learner_created: true
+- name: src/antifraud/models/DTO/amountParameters.java
+  visible: true
+  text: |
+    package antifraud.models.DTO;
+
+    public record amountParameters (long manualProcessingAmount, long prohibitedAmount){
+    }
+  learner_created: true
+- name: src/antifraud/exceptions/failedTransactionException.java
+  visible: true
+  text: |
+    package antifraud.exceptions;
+
+    import antifraud.models.enums.transactionResultTypes;
+    import org.springframework.http.HttpStatus;
+    import org.springframework.web.bind.annotation.ResponseStatus;
+
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public class failedTransactionException extends RuntimeException{
+        public failedTransactionException(transactionResultTypes rs) {
+            super(rs.name());
+        }
+
+    }
+  learner_created: true
+- name: src/antifraud/configuration/controllerAdvice.java
+  visible: true
+  text: |
+    package antifraud.configuration;
+
+    import antifraud.exceptions.failedTransactionException;
+    import antifraud.models.responses.transactionResponse;
+    import org.springframework.http.*;
+    import org.springframework.http.converter.HttpMessageNotReadableException;
+    import org.springframework.web.HttpRequestMethodNotSupportedException;
+    import org.springframework.web.bind.annotation.ControllerAdvice;
+    import org.springframework.web.bind.annotation.ExceptionHandler;
+    import org.springframework.web.bind.annotation.ResponseStatus;
+    import org.springframework.web.server.ResponseStatusException;
+
+    import java.util.Map;
+
+    @ControllerAdvice
+    public class controllerAdvice {
+
+        @ExceptionHandler(failedTransactionException.class)
+        public ResponseEntity<transactionResponse> handleFailedTransactionException(
+                failedTransactionException e) {
+
+            transactionResponse body = new transactionResponse(
+                    e.getMessage());
+
+            return new ResponseEntity<>(body, HttpStatus.BAD_REQUEST);
+        }
+
+        @ExceptionHandler(Exception.class)
+        public ResponseEntity<Object> handleException(Exception ex) {
+            ResponseStatus responseStatusAnnotation = ex.getClass().getAnnotation(ResponseStatus.class);
+
+            if (responseStatusAnnotation != null) {
+                return new ResponseEntity<>(
+                        Map.of("message", ex.getMessage()), responseStatusAnnotation.value());
+            } else {
+                return new ResponseEntity<>(
+                        Map.of("message", ex.getMessage()), HttpStatus.BAD_REQUEST);
+            }
+        }
+
+
+    //    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    //    public ResponseEntity<?> handleHttpRequestMethodNotSupportedException(
+    //            HttpRequestMethodNotSupportedException e) {
+    //
+    //        return new ResponseEntity<>(e.getMessage(), HttpStatus.BAD_REQUEST);
+    //    }
+
+    //    @ExceptionHandler(IllegalArgumentException.class)
+    //    public ResponseEntity<Object> handleIllegalArgumentException(
+    //            IllegalArgumentException e) {
+    //
+    //        HttpHeaders headers = new HttpHeaders();
+    //        headers.setContentType(MediaType.APPLICATION_JSON);
+    //
+    //        return new ResponseEntity<>(e.getMessage(), headers, HttpStatus.BAD_REQUEST);
+    //    }
+    }
+  learner_created: true
+- name: src/antifraud/business/transactionService.java
+  visible: true
+  text: |
+    package antifraud.business;
+
+
+    import antifraud.exceptions.failedTransactionException;
+    import antifraud.models.DTO.amountParameters;
+    import antifraud.models.requests.transactionRequest;
+    import antifraud.models.responses.transactionResponse;
+    import antifraud.models.enums.transactionResultTypes;
+    import org.springframework.beans.factory.annotation.Autowired;
+    import org.springframework.stereotype.Service;
+
+    @Service
+    public class transactionService {
+        private final amountParameters amountParameters;
+
+        @Autowired
+        public transactionService(amountParameters ap) {
+            this.amountParameters = ap;
+        }
+
+        public transactionResponse processTransaction(transactionRequest request) {
+
+            if(request.amount() <= 0) {
+                throw new failedTransactionException(transactionResultTypes.NEGATIVE_AMOUNT);
+            }
+            else if (request.amount() <= amountParameters.manualProcessingAmount()) {
+                return new transactionResponse(transactionResultTypes.ALLOWED.getMessage());
+            }
+            else if (request.amount() <= amountParameters.prohibitedAmount()) {
+                return new transactionResponse(transactionResultTypes.MANUAL_PROCESSING.getMessage());
+            }
+            else {
+                return new transactionResponse(transactionResultTypes.PROHIBITED.getMessage());
+            }
+        }
+    }
+  learner_created: true
+- name: src/antifraud/models/responses/registerResponse.java
+  visible: true
+  text: |
+    package antifraud.models.responses;
+
+    public record registerResponse(long id, String name, String username) {
+    }
+  learner_created: true
+- name: src/antifraud/exceptions/userNotFoundException.java
+  visible: true
+  text: |
+    package antifraud.exceptions;
+
+    import org.springframework.http.HttpStatus;
+    import org.springframework.web.bind.annotation.ResponseStatus;
+
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public class userNotFoundException extends RuntimeException{
+        public userNotFoundException(String errorMessage) {
+            super(errorMessage);
+        }
+    }
+  learner_created: true
+- name: src/antifraud/models/enums/transactionResultTypes.java
+  visible: true
+  text: |
+    package antifraud.models.enums;
+
+    public enum transactionResultTypes {
+
+        NEGATIVE_AMOUNT("NEGATIVE_AMOUNT"),
+        ALLOWED("ALLOWED"),
+        MANUAL_PROCESSING("MANUAL_PROCESSING"),
+        PROHIBITED("PROHIBITED");
+
+        final String message;
+        transactionResultTypes(String message) {
+            this.message = message;
+        }
+
+        public String getMessage() {
+            return message;
+        }
+
+    }
+  learner_created: true
+- name: src/antifraud/configuration/configuration.java
+  visible: true
+  text: |
+    package antifraud.configuration;
+
+
+    import antifraud.models.DTO.amountParameters;
+    import org.springframework.beans.factory.annotation.Value;
+    import org.springframework.context.annotation.Bean;
+    import org.springframework.context.annotation.Configuration;
+    import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+    import org.springframework.security.crypto.password.DelegatingPasswordEncoder;
+    import org.springframework.security.crypto.password.NoOpPasswordEncoder;
+    import org.springframework.security.crypto.password.PasswordEncoder;
+
+    import java.util.HashMap;
+    import java.util.Map;
+
+    @Configuration
+    public class configuration {
+
+        @Bean
+        public amountParameters getAmountParameters(@Value("${antifraud.manualProcessingAmount}") long manualProcessingAmount,
+                                                    @Value("${antifraud.prohibitedAmount}") long prohibitedAmount) {
+            return new amountParameters(manualProcessingAmount, prohibitedAmount);
+        }
+
+        @Bean
+        public PasswordEncoder passwordEncoder() {
+            Map<String,PasswordEncoder> encoders = new HashMap<>();
+            encoders.put("bcrypt", new BCryptPasswordEncoder(10));
+            encoders.put("noop", NoOpPasswordEncoder.getInstance());
+            encoders.put(null, NoOpPasswordEncoder.getInstance());
+
+            return new DelegatingPasswordEncoder("noop", encoders);
+
+        }
+    }
+  learner_created: true
+- name: src/antifraud/models/requests/transactionRequest.java
+  visible: true
+  text: |
+    package antifraud.models.requests;
+
+    public record transactionRequest(long amount) {
+    }
+  learner_created: true
+- name: src/antifraud/configuration/authentication/userDetailsServiceImpl.java
+  visible: true
+  text: |
+    package antifraud.configuration.authentication;
+
+    import antifraud.persitence.user;
+    import antifraud.persitence.userRepository;
+
+    import org.springframework.beans.factory.annotation.Autowired;
+    import org.springframework.security.core.userdetails.UserDetails;
+    import org.springframework.security.core.userdetails.UserDetailsService;
+    import org.springframework.security.core.userdetails.UsernameNotFoundException;
+    import org.springframework.stereotype.Service;
+
+    @Service
+    public class userDetailsServiceImpl implements UserDetailsService {
+
+        private final userRepository userRepository;
+
+        @Autowired
+        public userDetailsServiceImpl(userRepository ur) {
+            this.userRepository = ur;
+        }
+
+        @Override
+        public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
+
+            user user = userRepository.findTop1ByUsername(username);
+            if(user == null) {
+                throw new RuntimeException("User not found");
+            }
+
+            return new userDetailsImpl(user);
+        }
+    }
+  learner_created: true
+- name: src/antifraud/exceptions/userAlreadyExistException.java
+  visible: true
+  text: |
+    package antifraud.exceptions;
+
+    import antifraud.models.enums.transactionResultTypes;
+    import org.springframework.http.HttpStatus;
+    import org.springframework.web.bind.annotation.ResponseStatus;
+
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public class userAlreadyExistException extends RuntimeException {
+
+        public userAlreadyExistException(String errorMessage) {
+            super(errorMessage);
+        }
+    }
+  learner_created: true
+- name: src/antifraud/web/controller.java
+  visible: true
+  text: |+
+    package antifraud.web;
+
+    import antifraud.business.transactionService;
+    import antifraud.business.userService;
+    import antifraud.models.requests.registerRequest;
+    import antifraud.models.requests.transactionRequest;
+    import antifraud.models.responses.registerResponse;
+    import org.springframework.beans.factory.annotation.Autowired;
+    import org.springframework.http.ResponseEntity;
+    import org.springframework.lang.NonNull;
+    import org.springframework.stereotype.Controller;
+    import org.springframework.web.bind.annotation.*;
+
+    import java.net.URI;
+    import java.util.Map;
+
+    @Controller
+    public class controller {
+
+        private final transactionService transactionService;
+        private final userService userService;
+
+        @Autowired
+        public controller(transactionService ts, userService us) {
+            this.transactionService = ts;
+            this.userService = us;
+        }
+
+
+        @PostMapping("/api/antifraud/transaction")
+        public ResponseEntity<?> transaction(@RequestBody transactionRequest request) {
+            return ResponseEntity.ok().body(transactionService.processTransaction(request));
+        }
+
+        @PostMapping("/api/auth/user")
+        public ResponseEntity<?> registration(@RequestBody registerRequest request) {
+            registerResponse rR = userService.saveUser(request);
+            return ResponseEntity.created(URI.create("/api/auth/user")).body(rR);
+        }
+
+        @DeleteMapping("/api/auth/user/{username}")
+        public ResponseEntity<?> deletion(@PathVariable String username) {
+            Map<String,String> m = userService.deleteUser(username);
+            return ResponseEntity.status(200).body(m);
+        }
+
+        @GetMapping(value = "/api/auth/list")
+        public ResponseEntity<?> getUser() {
+
+            return ResponseEntity.ok().body(userService.findAll());
+        }
+
+    }
+
+  learner_created: true
+- name: src/antifraud/AntiFraudApplication.java
+  visible: true
+  text: |-
+    package antifraud;
+
+    import org.springframework.boot.SpringApplication;
+    import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+    @SpringBootApplication
+    public class AntiFraudApplication {
+        public static void main(String[] args) {
+            SpringApplication.run(AntiFraudApplication.class, args);
+        }
+    }
+  learner_created: false
+- name: src/antifraud/persitence/models/role.java
+  visible: true
+  learner_created: true
+- name: src/antifraud/persitence/repos/userRepository.java
+  visible: true
+  text: |
+    package antifraud.persitence;
+
+    import org.springframework.data.repository.CrudRepository;
+    import org.springframework.stereotype.Repository;
+
+    import java.util.List;
+
+    @Repository
+    public interface userRepository extends CrudRepository<user, Long> {
+        user findTop1ByUsername(String username);
+        long deleteByUsername(String username);
+
+    }
+  learner_created: true
+- name: src/antifraud/configuration/authentication/userDetailsImpl.java
+  visible: true
+  text: |
+    package antifraud.configuration.authentication;
+
+    import antifraud.persitence.user;
+    import org.springframework.security.core.GrantedAuthority;
+    import org.springframework.security.core.authority.SimpleGrantedAuthority;
+    import org.springframework.security.core.userdetails.UserDetails;
+
+    import java.util.Collection;
+    import java.util.List;
+
+    public class userDetailsImpl implements UserDetails {
+        private final String name;
+        private final String username;
+        private final String password;
+
+        private final List<GrantedAuthority> rolesAndAuthorities;
+
+        public userDetailsImpl(String name, String username, String password, String role) {
+            this.name = name;
+            this.username = username;
+            this.password = password;
+            this.rolesAndAuthorities = List.of(new SimpleGrantedAuthority(role));
+        }
+        public userDetailsImpl(user u){
+            this.name = u.getName();
+            this.username = u.getUsername();
+            this.password = u.getPassword();
+            this.rolesAndAuthorities = List.of(new SimpleGrantedAuthority(u.getRole()));
+        }
+
+        @Override
+        public Collection<? extends GrantedAuthority> getAuthorities() {
+            return rolesAndAuthorities;
+        }
+
+        @Override
+        public String getPassword() {
+            return password;
+        }
+
+        @Override
+        public String getUsername() {
+            return username;
+        }
+
+        @Override
+        public boolean isAccountNonExpired() {
+            return true;
+        }
+
+        @Override
+        public boolean isAccountNonLocked() {
+            return true;
+        }
+
+        @Override
+        public boolean isCredentialsNonExpired() {
+            return true;
+        }
+
+        @Override
+        public boolean isEnabled() {
+            return true;
+        }
+    }
+  learner_created: true
+- name: src/antifraud/business/roleService.java
+  visible: true
+  learner_created: true
+- name: src/antifraud/persitence/repos/roleRepository.java
+  visible: true
+  learner_created: true
+- name: src/antifraud/persitence/models/user.java
+  visible: true
+  text: |-
+    package antifraud.persitence;
+
+
+    import com.fasterxml.jackson.annotation.JsonIgnore;
+    import com.fasterxml.jackson.annotation.JsonInclude;
+    import jakarta.persistence.*;
+
+
+    @Entity
+    @Table(name = "users")
+    public class user {
+
+        @Id
+        @GeneratedValue(strategy = GenerationType.IDENTITY)
+        private long id;
+        @Column(unique = true)
+        private String name;
+        @Column(unique = true)
+        private String username;
+
+        @JsonIgnore
+        private String password;
+
+        @JsonIgnore
+        private String role;
+
+        public user() {
+
+        }
+        public user(Long id, String name, String username, String password, String role) {
+            this.id=id;
+            this.name = name;
+            this.username = username;
+            this.password = password;
+            this.role=role;
+        }
+
+        public user(String name, String username, String password, String role) {
+            this.name = name;
+            this.username = username;
+            this.password = password;
+            this.role=role;
+        }
+
+        public user(String name, String username, String password) {
+            this(name, username, password, "USER");
+        }
+
+        public String getName() {
+            return this.name;
+        }
+
+        public String getUsername() {
+            return this.username;
+        }
+
+        public String getPassword() {
+            return this.password;
+        }
+
+        public String getRole() {
+            return this.role;
+        }
+
+        public long getId() {
+            return this.id;
+        }
+    }
+  learner_created: true
+- name: src/antifraud/models/enums/roles.java
+  visible: true
+  learner_created: true
+- name: src/antifraud/models/requests/unlockLockRequest.java
+  visible: true
+  learner_created: true
+- name: src/antifraud/models/responses/unlockLockResponse.java
+  visible: true
+  learner_created: true
+- name: src/antifraud/models/requests/changeRoleRequest.java
+  visible: true
+  learner_created: true
+- name: src/antifraud/models/responses/changeRoleResponse.java
+  visible: true
+  learner_created: true
+- name: src/antifraud/exceptions/alreadyHasRoleException.java
+  visible: true
+  learner_created: true
+- name: src/antifraud/configuration/exceptionProducers.java
+  visible: true
+  learner_created: true
+feedback_link: https://hyperskill.org/learn/step/18069#comment
+status: Solved
+feedback:
+  message: Congratulations!
+  time: "Sun, 06 Aug 2023 17:36:23 UTC"
+record: -1
